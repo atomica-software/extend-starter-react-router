@@ -1,0 +1,11 @@
+node_modules/
+/build/
+/.react-router/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+
+# Structured app logs written by the Extend runner (read them with `extend-logs`).
+.extend-logs/

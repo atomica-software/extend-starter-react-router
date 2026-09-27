@@ -1,0 +1,14 @@
+{
+  "template": "react-router",
+  "version": "1.0.0",
+  "commands": {
+    "install": "npm ci",
+    "dev": "npm run dev",
+    "build": "npm run build",
+    "start": "npm start",
+    "check": "npm run check",
+    "migrate": "npm run db:migrate"
+  },
+  "port": 3000,
+  "health": "/_app/health"
+}

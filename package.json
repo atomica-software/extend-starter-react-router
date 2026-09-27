@@ -1,0 +1,46 @@
+{
+  "name": "extend-starter-react-router",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "react-router dev --host 0.0.0.0 --port 3000",
+    "build": "react-router build",
+    "start": "PORT=${PORT:-3000} react-router-serve ./build/server/index.js",
+    "typecheck": "react-router typegen && tsc",
+    "check": "react-router typegen && tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "node scripts/migrate.mjs"
+  },
+  "dependencies": {
+    "@atomica-software/contactzilla": "0.2.0",
+    "@fontsource/figtree": "5.3.0",
+    "@react-router/node": "7.18.4",
+    "@react-router/serve": "7.18.4",
+    "clsx": "2.1.1",
+    "drizzle-orm": "0.45.3",
+    "isbot": "5.2.2",
+    "postgres": "3.4.9",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "react-router": "7.18.4"
+  },
+  "devDependencies": {
+    "@react-router/dev": "7.18.4",
+    "@tailwindcss/vite": "4.3.3",
+    "@types/node": "22.20.4",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "drizzle-kit": "0.31.11",
+    "tailwindcss": "4.3.3",
+    "typescript": "5.9.3",
+    "vite": "6.4.3",
+    "vite-tsconfig-paths": "6.1.1",
+    "vitest": "4.1.11"
+  }
+}

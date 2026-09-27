@@ -1,0 +1,57 @@
+@import "tailwindcss";
+
+/* Dark mode follows Contactzilla (cz.theme → <html class="dark">), not the OS. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Contactzilla design tokens. Apps run inside Contactzilla, so they should look like it:
+ * Figtree, green primary actions, Tailwind gray neutrals, rounded-md controls.
+ * Prefer the components in app/components/ui over hand-rolled classes.
+ */
+@theme {
+  /* Figtree is self-hosted via @fontsource/figtree (imported in app/root.tsx). */
+  --font-sans: "Figtree", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+
+  --color-pcgreen-100: #7dcf3e;
+  --color-pcgreen-200: #64af2b;
+  --color-pcgreen-300: #518e23;
+  --color-pcblack: #212121;
+  --color-pcwhite: #faf9f3;
+  --color-pcgrey: #dbdbdb;
+  --color-pcsalmon: #ff818f;
+  --color-pcblue: #7c3aed;
+
+  /* Semantic aliases: bg-primary, hover:bg-primary-hover, border-primary-border, text-link… */
+  --color-primary: #64af2b;
+  --color-primary-hover: #7dcf3e;
+  --color-primary-border: #518e23;
+  --color-primary-foreground: #ffffff;
+  --color-link: #518e23;
+  --color-danger: var(--color-red-500);
+  --color-danger-hover: var(--color-red-600);
+}
+
+@layer base {
+  html,
+  body {
+    @apply bg-white text-gray-900 antialiased dark:bg-gray-950 dark:text-gray-100;
+  }
+
+  a {
+    @apply text-link underline-offset-2 hover:underline dark:text-pcgreen-100;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-pcgreen-300);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background-color: color-mix(in srgb, var(--color-pcgreen-100) 35%, transparent);
+  }
+
+  dialog::backdrop {
+    background-color: rgb(17 24 39 / 0.5);
+  }
+}
