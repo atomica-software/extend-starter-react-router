@@ -46,6 +46,15 @@ export function czHost(): string {
   return contactzillaHost() ?? "";
 }
 
+/**
+ * The Contactzilla the app is embedded in (CZ_PUBLIC_URL), whose origin the postMessage
+ * bridge talks to. Stacks from before it was passed to apps have the same URL as
+ * CZ_API_HOST only.
+ */
+export function czPublicUrl(): string {
+  return process.env.CZ_PUBLIC_URL || process.env.CZ_API_HOST || "https://contactzilla.app";
+}
+
 /** A display name for a contact. */
 export function contactDisplayName(contact: {
   first_name?: string | null;

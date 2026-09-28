@@ -10,6 +10,7 @@ import {
 import { useEffect } from "react";
 
 import type { Route } from "./+types/root";
+import { czPublicUrl } from "./lib/cz.server";
 import { installExtendLog, reportClientError } from "./lib/extend-log.client";
 import { useThemeSync } from "./lib/extend-sdk";
 // Figtree, Contactzilla's typeface, self-hosted (no external font request, nothing for a CSP to block).
@@ -23,7 +24,7 @@ import { buttonClasses } from "./components/ui";
 export function loader() {
   // Exposed to the browser so the postMessage bridge can origin-check against
   // the Contactzilla parent window (see app/lib/extend-sdk.ts).
-  return { czPublicUrl: process.env.CZ_PUBLIC_URL ?? "https://contactzilla.app" };
+  return { czPublicUrl: czPublicUrl() };
 }
 
 export function Layout({ children }: { children: React.ReactNode }) {

@@ -47,7 +47,10 @@ tests/                     Vitest unit tests
 - **Who is the user?** Call `getViewer(request)` or `requireViewer(request)` in a
   loader or action. The edge proxy sets `X-CZ-User-Id`, `-Name`, `-Email`,
   `X-CZ-Team` (team slug) and `X-CZ-Role` (`admin | member | restricted`) after
-  authenticating the viewer. Don't build a login.
+  authenticating the viewer, and signs them with the environment's
+  `EXTEND_IDENTITY_KEY`; `getViewer` only trusts them when the signature checks
+  out (anything else that can reach the app could send the headers). Don't build
+  a login.
 - **Calling Contactzilla.** Only from server code (loaders and actions), with
   `cz(viewer)` from `app/lib/cz.server.ts`: the typed
   [`@atomica-software/contactzilla`](https://www.npmjs.com/package/@atomica-software/contactzilla)
@@ -82,12 +85,14 @@ tests/                     Vitest unit tests
 |---|---|
 | `PORT` | Listen port (3000) |
 | `CZ_API_BASE` | Contactzilla proxy, e.g. `http://control:8080/cz` |
-| `CZ_PUBLIC_URL` | Contactzilla origin for the postMessage bridge (default `https://contactzilla.app`) |
+| `CZ_API_HOST` | The Contactzilla the stack belongs to, for links to its pages (`czHost()`) |
+| `CZ_PUBLIC_URL` | Contactzilla origin for the postMessage bridge (`czPublicUrl()`; falls back to `CZ_API_HOST`, then `https://contactzilla.app`) |
 | `DATABASE_URL` | The app's Postgres database |
 
-To run it locally without the proxy, send the identity headers yourself:
+To run it locally without the proxy, tell it to trust the identity headers you
+send (never set this on a server anything else can reach):
 
 ```sh
-CZ_API_BASE=http://localhost:8080/cz npm run dev
+EXTEND_TRUST_IDENTITY_HEADERS=1 CZ_API_BASE=http://localhost:8080/cz npm run dev
 curl -H 'X-CZ-User-Id: 1' -H 'X-CZ-Team: acme' -H 'X-CZ-Role: admin' http://localhost:3000/
 ```

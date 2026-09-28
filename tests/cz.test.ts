@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { contactDisplayName, cz, CzApiError, CzNotConnectedError, czHost } from "../app/lib/cz.server";
+import { contactDisplayName, cz, CzApiError, CzNotConnectedError, czHost, czPublicUrl } from "../app/lib/cz.server";
 
 const fetchMock = vi.fn<typeof fetch>();
 
@@ -99,6 +99,16 @@ describe("errors", () => {
 describe("helpers", () => {
   it("gives the stack's Contactzilla host for links", () => {
     expect(czHost()).toBe("https://contactzilla.us");
+  });
+
+  it("gives the bridge's Contactzilla: CZ_PUBLIC_URL, else CZ_API_HOST, else contactzilla.app", () => {
+    vi.stubEnv("CZ_PUBLIC_URL", "https://localhost.test");
+    expect(czPublicUrl()).toBe("https://localhost.test");
+    // A stack from before CZ_PUBLIC_URL reached apps (compose sets it empty or not at all).
+    vi.stubEnv("CZ_PUBLIC_URL", "");
+    expect(czPublicUrl()).toBe("https://contactzilla.us");
+    vi.stubEnv("CZ_API_HOST", "");
+    expect(czPublicUrl()).toBe("https://contactzilla.app");
   });
 
   it("names a contact", () => {
