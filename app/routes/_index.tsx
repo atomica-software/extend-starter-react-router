@@ -1,6 +1,8 @@
+// The starter's demo page. `/` is the app's main screen: on the first build, replace this
+// file's contents with the app itself (extend-starter-demo-page).
 import type { Route } from "./+types/_index";
-import { type AddressBook, cz, CzApiError, CzNotConnectedError } from "../lib/cz.server";
-import { Alert, Badge, Button, Card, CardHeader } from "../components/ui";
+import { type AddressBook, appAddressBooks, CzApiError, CzNotConnectedError } from "../lib/cz.server";
+import { Alert, Badge, Button, Card, CardHeader, NotConnectedAlert } from "../components/ui";
 import { useExtendSdk } from "../lib/extend-sdk";
 import { log } from "../lib/log.server";
 import { getViewer } from "../lib/viewer.server";
@@ -23,8 +25,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     books = { status: "no-viewer" };
   } else {
     try {
-      const { data } = await cz(viewer).listAddressBooks({ team: viewer.team });
-      books = { status: "ok", addressBooks: data };
+      // The books the app is available in, of those this viewer can see.
+      books = { status: "ok", addressBooks: await appAddressBooks(viewer) };
     } catch (error) {
       if (error instanceof CzNotConnectedError) {
         books = { status: "not-connected", message: error.message };
@@ -51,15 +53,18 @@ export default function Home({ loaderData }: Route.ComponentProps) {
   return (
     <main className="mx-auto max-w-3xl space-y-6 p-4 sm:p-6">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Your Extend app</h1>
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="text-2xl font-semibold tracking-tight">Your Extend app</h1>
+          <Badge tone="amber">Replace this demo</Badge>
+        </div>
         <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          A starting point: edit <code className="font-mono">app/routes/_index.tsx</code>. UI components
-          live in <code className="font-mono">app/components/ui</code>.
+          This demo page is where your app goes. Describe what you need in the Builder, and it
+          replaces this page with your app.
         </p>
       </header>
 
       <Card>
-        <CardHeader title="Viewer" />
+        <CardHeader title="Viewer (demo)" />
         {viewer ? (
           <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-2 text-sm">
             <dt className="text-gray-500 dark:text-gray-400">Name</dt>
@@ -84,7 +89,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
 
       <Card>
         <CardHeader
-          title="Address books"
+          title="Address books (demo)"
           actions={
             sdk.embedded && (
               <Button
@@ -99,7 +104,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
         <div className="text-sm">
           {books.status === "ok" &&
             (books.addressBooks.length === 0 ? (
-              <p className="text-gray-600 dark:text-gray-400">This team has no address books yet.</p>
+              <p className="text-gray-600 dark:text-gray-400">The app isn&apos;t available in any address book you can see.</p>
             ) : (
               <ul className="-my-2 divide-y divide-gray-200 dark:divide-gray-800">
                 {books.addressBooks.map((book) => (
@@ -121,9 +126,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
             </p>
           )}
           {books.status === "not-connected" && (
-            <Alert tone="warning" title="Contactzilla isn't connected">
-              Ask an admin to reconnect from the Builder console.
-            </Alert>
+            <NotConnectedAlert />
           )}
           {books.status === "error" && (
             <Alert tone="danger" title="Couldn't load address books">

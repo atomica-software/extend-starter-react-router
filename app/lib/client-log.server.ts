@@ -26,6 +26,14 @@ export function toClientRecord(raw: unknown, now: Date = new Date()): LogRecord 
   };
   if (typeof r.stack === "string" && r.stack) rec.stack = cap(r.stack, MAX_STACK);
   if (typeof r.url === "string" && r.url) rec.url = cap(urlPath(r.url), MAX_URL);
+  // A hot reload's errors (the reporter tags them in the dev server only). The page can't
+  // claim "builder": only a signed request header can (app/routes/_app.log.ts).
+  if (r.origin === "hmr" && process.env.NODE_ENV !== "production") rec.origin = "hmr";
+  // "This page loaded without errors" (the dev server's reporter only): Extend's runner checks
+  // the rest of the log over that time, and Contactzilla clears the page's error cards (#954).
+  if (rec.level === "info" && typeof r.loadMs === "number" && Number.isFinite(r.loadMs)) {
+    rec.context = { extend_page_load_ms: Math.max(0, Math.round(r.loadMs)) };
+  }
   return rec;
 }
 

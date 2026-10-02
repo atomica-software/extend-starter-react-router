@@ -7,5 +7,6 @@ export { FileUpload, type UploadedFile } from "./FileUpload";
 export { ConfirmDialog, Dialog } from "./Dialog";
 export { Checkbox, controlClasses, Field, Input, Label, Select, Textarea } from "./Field";
 export { LocalTime } from "./LocalTime";
+export { NotConnectedAlert } from "./NotConnectedAlert";
 export { Spinner } from "./Spinner";
 export { TabList, Tabs, tabClasses } from "./Tabs";

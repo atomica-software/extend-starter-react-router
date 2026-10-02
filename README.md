@@ -17,16 +17,19 @@ vite.config.ts             Dev server on 0.0.0.0:3000, any Host allowed (behind 
 drizzle.config.ts          Drizzle Kit: schema app/db/schema.ts → app/db/migrations
 app/
   root.tsx                 HTML shell; root loader exposes CZ_PUBLIC_URL for the bridge
-  routes.ts                Explicit route config (add new routes here)
-  routes/_index.tsx        Home: viewer, team and address books
+  routes.ts                Explicit route config (index = `/`, the app's main screen)
+  routes/_index.tsx        The app's main screen at `/`: a demo page until the app replaces it
   routes/_app.health.ts    GET /_app/health → {"status":"ok"}
   lib/viewer.server.ts     getViewer / requireViewer from X-CZ-* headers
-  lib/cz.server.ts         cz(viewer): typed Contactzilla client (server-only)
+  lib/cz.server.ts         cz(viewer): typed Contactzilla client, appAddressBooks(), contactMobileE164() (server-only)
+  lib/contacts.ts          readContact(), customField(), samePhone(): reading contact fields
+  lib/messaging.server.ts  sendSms(), replies and delivery reports (Twilio), with an outbox
   lib/extend-sdk.ts        postMessage bridge to the Contactzilla parent window
   db/schema.ts             Drizzle tables (none yet)
   db/client.server.ts      getDb(): lazily created Drizzle client
   db/migrations/           Generated SQL migrations (commit them)
-scripts/migrate.mjs        Applies migrations (no-op when there are none)
+  db/seeds/                Example data: *.sql applied once per database by db:migrate
+scripts/migrate.mjs        Applies migrations, then example data not applied yet (scripts/seeds.mjs)
 tests/                     Vitest unit tests
 ```
 
@@ -40,7 +43,7 @@ tests/                     Vitest unit tests
 | `npm run check` | Route typegen + `tsc` |
 | `npm test` | Vitest |
 | `npm run db:generate` | Generate a migration from `app/db/schema.ts` |
-| `npm run db:migrate` | Apply migrations to `DATABASE_URL` |
+| `npm run db:migrate` | Apply migrations, then new `app/db/seeds/*.sql`, to `DATABASE_URL` |
 
 ## Conventions
 

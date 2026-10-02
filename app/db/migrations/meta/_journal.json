@@ -8,6 +8,13 @@
       "when": 1790378336469,
       "tag": "0000_oauth_tokens",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1790905387531,
+      "tag": "0001_messaging",
+      "breakpoints": true
     }
   ]
 }

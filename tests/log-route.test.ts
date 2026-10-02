@@ -30,6 +30,16 @@ describe("_app/log route", () => {
     expect(r.stack).toHaveLength(8000);
   });
 
+  it("passes a page-loaded record's load time on for the runner, and only at info (#954)", () => {
+    const loaded = { level: "info", message: "Page loaded without errors", url: "/incidents", loadMs: 1234.6 };
+    expect(toClientRecord(loaded, NOW)!.context).toEqual({ extend_page_load_ms: 1235 });
+    expect(toClientRecord({ ...loaded, loadMs: -5 }, NOW)!.context).toEqual({ extend_page_load_ms: 0 });
+    expect(toClientRecord({ ...loaded, level: "error" }, NOW)).not.toHaveProperty("context");
+    expect(toClientRecord({ ...loaded, loadMs: "1" }, NOW)).not.toHaveProperty("context");
+    // A page can't send any other context, such as the markers Extend itself sets.
+    expect(toClientRecord({ ...loaded, loadMs: undefined, context: { extend_clean: "verify" } }, NOW)).not.toHaveProperty("context");
+  });
+
   it("rejects non-arrays, bad JSON and oversized batches", () => {
     expect(parseBatch("{}", NOW)).toBe("expected a JSON array");
     expect(parseBatch("nope", NOW)).toBe("invalid JSON");

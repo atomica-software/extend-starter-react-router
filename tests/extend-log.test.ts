@@ -185,4 +185,135 @@ describe("installExtendLog", () => {
     ]);
     expect(records.every((r) => r.url === "/contacts")).toBe(true);
   });
+
+  it("reports expected noise at info: validation answers, manifest mismatches, hot reloads (#48)", async () => {
+    vi.useFakeTimers();
+    let t = Date.parse("2026-09-24T10:00:00Z");
+    const beacons: Blob[] = [];
+    const listeners: Record<string, (ev: any) => void> = {};
+    const hot: Record<string, () => void> = {};
+    const remix = { "X-Remix-Response": "yes" };
+    const responses: Record<string, Response> = {
+      "/_.data?index": new Response("", { status: 422, statusText: "Unprocessable Entity", headers: remix }),
+      "/api/x": new Response("", { status: 422, statusText: "Unprocessable Entity" }),
+      "/contacts.data": new Response("", { status: 500, statusText: "Internal Server Error", headers: remix }),
+    };
+    const win: ReporterWindow = {
+      location: { origin: "https://app.h.test", pathname: "/", search: "" },
+      console: { error: vi.fn(), warn: vi.fn() } as unknown as Console,
+      fetch: (async (input: RequestInfo | URL) => responses[String(input)]!) as typeof fetch,
+      navigator: { sendBeacon: (_url: string, data: BodyInit) => (beacons.push(data as Blob), true) },
+      addEventListener: (type, fn) => {
+        listeners[type] = fn;
+      },
+    };
+    installExtendLog(win, { hot: { on: (ev, cb) => void (hot[ev] = cb) }, now: () => t });
+
+    await win.fetch("/_.data?index", { method: "POST" });
+    await win.fetch("/api/x", { method: "POST" });
+    await win.fetch("/contacts.data");
+    win.console.warn("Detected manifest version mismatch, reloading...");
+    listeners.error!({ error: Object.assign(new Error("render failed"), { stack: "Error: render failed\n    at scheduleRefresh (/@react-refresh:1:1)" }) });
+    win.console.error("before any update");
+    hot["vite:afterUpdate"]!();
+    t += 1_000;
+    win.console.error("An error occurred during concurrent rendering");
+    t += 10_000;
+    win.console.error("long after the update");
+
+    vi.advanceTimersByTime(2000);
+    const records = JSON.parse(await beacons[0]!.text()) as ClientLogRecord[];
+    expect(records.map((r) => [r.level, r.message, r.origin ?? "app"])).toEqual([
+      ["info", "POST /_.data?index → 422 Unprocessable Entity", "app"],
+      ["error", "POST /api/x → 422 Unprocessable Entity", "app"],
+      ["error", "GET /contacts.data → 500 Internal Server Error", "app"],
+      ["info", "Detected manifest version mismatch, reloading...", "app"],
+      ["info", "Uncaught Error: render failed", "hmr"],
+      ["error", "before any update", "app"],
+      ["info", "An error occurred during concurrent rendering", "hmr"],
+      ["error", "long after the update", "app"],
+    ]);
+  });
+
+  it("tags nothing as a hot reload outside the dev server", async () => {
+    vi.useFakeTimers();
+    const beacons: Blob[] = [];
+    const listeners: Record<string, (ev: any) => void> = {};
+    const win: ReporterWindow = {
+      location: { origin: "https://app.h.test", pathname: "/", search: "" },
+      console: { error: vi.fn(), warn: vi.fn() } as unknown as Console,
+      fetch: (async () => new Response("")) as typeof fetch,
+      navigator: { sendBeacon: (_url: string, data: BodyInit) => (beacons.push(data as Blob), true) },
+      addEventListener: (type, fn) => {
+        listeners[type] = fn;
+      },
+    };
+    installExtendLog(win, {});
+    listeners.error!({ error: Object.assign(new Error("x"), { stack: "Error: x\n    at scheduleRefresh (/@react-refresh:1:1)" }) });
+    vi.advanceTimersByTime(2000);
+    const records = JSON.parse(await beacons[0]!.text()) as ClientLogRecord[];
+    expect(records[0]).toMatchObject({ level: "error" });
+    expect(records[0]).not.toHaveProperty("origin");
+  });
+
+  describe("in the dev server, a page that loads without errors says so once (#954)", () => {
+    const setup = (opts: { status?: number; ready?: string } = {}) => {
+      vi.useFakeTimers();
+      const beacons: Blob[] = [];
+      const listeners: Record<string, (ev: any) => void> = {};
+      const win: ReporterWindow = {
+        location: { origin: "https://app.h.test", pathname: "/incidents", search: "?open=1" },
+        console: { error: vi.fn(), warn: vi.fn() } as unknown as Console,
+        fetch: (async () => new Response("")) as typeof fetch,
+        navigator: { sendBeacon: (_url: string, data: BodyInit) => (beacons.push(data as Blob), true) },
+        addEventListener: (type, fn) => {
+          listeners[type] = fn;
+        },
+        document: { readyState: opts.ready ?? "complete" },
+        performance: { now: () => 1840.4, getEntriesByType: () => (opts.status ? [{ responseStatus: opts.status }] : []) },
+      };
+      const hot = { on: () => {} };
+      const records = async () => (await Promise.all(beacons.map((b) => b.text()))).flatMap((t) => JSON.parse(t) as ClientLogRecord[]);
+      return { win, hot, listeners, records };
+    };
+
+    it("after a quiet few seconds, with its load time", async () => {
+      const { win, hot, records } = setup();
+      installExtendLog(win, { hot });
+      vi.advanceTimersByTime(2_999);
+      expect(await records()).toEqual([]);
+      vi.advanceTimersByTime(1);
+      expect(await records()).toEqual([{ level: "info", message: "Page loaded without errors", url: "/incidents?open=1", at: expect.any(String), loadMs: 1840 }]);
+    });
+
+    it("waits for the load event when the page is still loading", async () => {
+      const { win, hot, listeners, records } = setup({ ready: "interactive" });
+      installExtendLog(win, { hot });
+      vi.advanceTimersByTime(5_000);
+      expect(await records()).toEqual([]);
+      listeners.load!({});
+      vi.advanceTimersByTime(3_000);
+      expect((await records()).map((r) => r.message)).toEqual(["Page loaded without errors"]);
+    });
+
+    it("not after an error or warning, nor on an error page, nor outside the dev server", async () => {
+      const a = setup();
+      installExtendLog(a.win, { hot: a.hot });
+      a.win.console.warn("Each child in a list should have a unique key");
+      vi.advanceTimersByTime(5_000);
+      expect((await a.records()).map((r) => r.message)).toEqual(["Each child in a list should have a unique key"]);
+      _resetForTests();
+
+      const b = setup({ status: 404 });
+      installExtendLog(b.win, { hot: b.hot });
+      vi.advanceTimersByTime(5_000);
+      expect(await b.records()).toEqual([]);
+      _resetForTests();
+
+      const c = setup();
+      installExtendLog(c.win, {});
+      vi.advanceTimersByTime(5_000);
+      expect(await c.records()).toEqual([]);
+    });
+  });
 });

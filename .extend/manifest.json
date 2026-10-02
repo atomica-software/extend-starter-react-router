@@ -1,6 +1,6 @@
 {
   "template": "react-router",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "commands": {
     "install": "npm ci",
     "dev": "npm run dev",

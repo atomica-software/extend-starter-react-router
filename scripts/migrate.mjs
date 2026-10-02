@@ -1,11 +1,14 @@
-// Applies Drizzle migrations from ./app/db/migrations to DATABASE_URL.
+// Applies Drizzle migrations from ./app/db/migrations to DATABASE_URL, then any
+// example data in ./app/db/seeds not applied yet (scripts/seeds.mjs).
 // Used by `npm run db:migrate` (the manifest's "migrate" command).
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { applySeeds, seedFiles } from "./seeds.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const migrationsFolder = join(root, "app", "db", "migrations");
+const seedsFolder = join(root, "app", "db", "seeds");
 
 const url = process.env.DATABASE_URL;
 if (!url) {
@@ -25,7 +28,7 @@ if (existsSync(journalPath)) {
     process.exit(1);
   }
 }
-if (entries.length === 0) {
+if (entries.length === 0 && seedFiles(seedsFolder).length === 0) {
   console.log("db:migrate: no migrations in app/db/migrations; nothing to do.");
   process.exit(0);
 }
@@ -36,8 +39,11 @@ const { migrate } = await import("drizzle-orm/postgres-js/migrator");
 
 const sql = postgres(url, { max: 1, onnotice: () => {} });
 try {
-  await migrate(drizzle(sql), { migrationsFolder });
-  console.log("db:migrate: migrations applied.");
+  if (entries.length > 0) {
+    await migrate(drizzle(sql), { migrationsFolder });
+    console.log("db:migrate: migrations applied.");
+  }
+  await applySeeds(sql, seedsFolder);
 } catch (error) {
   console.error("db:migrate: failed:", error);
   process.exitCode = 1;

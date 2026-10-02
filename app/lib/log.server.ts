@@ -14,6 +14,12 @@
 
 export type LogLevel = "error" | "warn" | "info";
 export type LogSource = "server" | "client";
+/**
+ * Who caused the record, when it isn't the app in use (CONTRACTS §6.6): "builder" for the
+ * Builder's own test requests (app/lib/extend-origin.server.ts), "hmr" for the dev server's hot
+ * reloads. Absent means the app.
+ */
+export type LogOrigin = "builder" | "hmr";
 
 export const LOG_PREFIX = "[extend-log] ";
 export const MAX_MESSAGE = 2000;
@@ -32,6 +38,7 @@ export interface LogRecord {
   url?: string;
   at: string;
   context?: LogContext;
+  origin?: LogOrigin;
 }
 
 export interface LogFields {

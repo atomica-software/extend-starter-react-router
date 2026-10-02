@@ -7,8 +7,20 @@
 //
 // You don't need to call anything: just use console.error as usual. To report a caught error
 // explicitly: `reportClientError(error, "Saving failed")`.
+//
+// Expected noise is reported at info, which raises nothing in Contactzilla (#48):
+// - a form's validation answer (an action's 400/422, which React Router marks X-Remix-Response);
+// - React Router's "manifest version mismatch" warning after a deploy or a hot reload;
+// - in the dev server only, errors caused by a hot reload (their stack runs through Vite's HMR
+//   runtime, or they arrive within seconds of an update), tagged `origin: "hmr"`.
+//
+// In the Preview (the dev server), a page that loads and reports nothing for a few seconds says
+// so once, as an info record with `loadMs`. Extend's runner checks that nothing else in the app
+// logged an error while it loaded, and then Contactzilla clears that page's error cards (#954).
 
 export type ClientLevel = "error" | "warn" | "info";
+/** Set on records a hot reload caused (dev server only); absent for the app's own. */
+export type ClientOrigin = "hmr";
 
 export interface ClientLogRecord {
   level: ClientLevel;
@@ -16,6 +28,9 @@ export interface ClientLogRecord {
   stack?: string;
   url?: string;
   at: string;
+  origin?: ClientOrigin;
+  /** Only on the page-loaded record: milliseconds from navigation start to this record. */
+  loadMs?: number;
 }
 
 export const LOG_ENDPOINT = "/_app/log";
@@ -82,6 +97,7 @@ export class Reporter {
   private readonly recent = new Map<string, number>();
   private busy = false;
   private total = 0;
+  private problemCount = 0;
   private readonly now: () => number;
   private readonly setTimer: (fn: () => void, ms: number) => unknown;
   private readonly clearTimer: (handle: unknown) => void;
@@ -100,17 +116,23 @@ export class Reporter {
     this.maxTotal = opts.maxTotal ?? 200;
   }
 
+  /** Errors and warnings reported so far on this page, repeats and dropped ones included. */
+  get problems(): number {
+    return this.problemCount;
+  }
+
   /** True while the reporter itself is running (anything logged then must not be re-reported). */
   get reporting(): boolean {
     return this.busy;
   }
 
-  report(input: { level: ClientLevel; message: string; stack?: string; url?: string }): void {
+  report(input: { level: ClientLevel; message: string; stack?: string; url?: string; origin?: ClientOrigin; loadMs?: number }): void {
     if (this.busy) return; // recursion guard: errors raised while reporting are dropped
     this.busy = true;
     try {
       const message = truncate(String(input.message ?? "").trim(), MAX_MESSAGE);
       if (!message) return;
+      if (input.level !== "info") this.problemCount++;
       const now = this.now();
       const key = `${input.level}\n${message}`;
       const seen = this.recent.get(key);
@@ -124,6 +146,8 @@ export class Reporter {
       const rec: ClientLogRecord = { level: input.level, message, at: isoNow(now) };
       if (input.stack) rec.stack = truncate(input.stack, MAX_STACK);
       if (input.url) rec.url = truncate(input.url, 2000);
+      if (input.origin) rec.origin = input.origin;
+      if (input.loadMs !== undefined) rec.loadMs = input.loadMs;
       this.queue.push(rec);
       if (this.queue.length >= this.maxBatch) this.flushLocked();
       else if (this.timer === undefined) {
@@ -184,6 +208,22 @@ function requestInfo(input: unknown, init?: { method?: string }): { url: string;
 
 // Dev-server chatter that isn't an app problem.
 const IGNORED = [/^\[vite\]/, /^\[HMR\]/, /Download the React DevTools/];
+// Expected, not a problem in the app: reported at info.
+const QUIET = [/manifest version mismatch/i];
+/** A stack through Vite's HMR runtime or React Refresh: the error came from a hot reload. */
+const HMR_STACK = /hmr-runtime|@vite\/client|scheduleRefresh|performReactRefresh|@react-refresh|react-refresh/;
+/** Errors this soon after a hot update count as caused by it (a half-saved file, a re-render). */
+export const HMR_WINDOW_MS = 5_000;
+
+/** The page-loaded record's message (the runner recognises it by `loadMs`). */
+export const PAGE_LOADED = "Page loaded without errors";
+/** How long a loaded page must stay quiet before it counts as loaded without errors. */
+export const PAGE_QUIET_MS = 3_000;
+
+/** Vite's `import.meta.hot`, as far as the reporter needs it. */
+export interface HotContext {
+  on(event: "vite:beforeUpdate" | "vite:afterUpdate" | "vite:error", cb: () => void): void;
+}
 
 let installed: { reporter: Reporter } | null = null;
 
@@ -194,15 +234,30 @@ export interface ReporterWindow {
   fetch: typeof fetch;
   navigator?: { sendBeacon?: (url: string, data: BodyInit) => boolean };
   addEventListener: (type: string, fn: (ev: any) => void) => void;
+  document?: { readyState: string };
+  performance?: { now(): number; getEntriesByType?(type: string): unknown[] };
 }
 
 /**
  * Hooks console, error events and fetch. Idempotent; a no-op on the server. Returns the reporter
- * (or null on the server).
+ * (or null on the server). `hot` is Vite's import.meta.hot (only set by the dev server).
  */
-export function installExtendLog(win: ReporterWindow | undefined = typeof window === "undefined" ? undefined : window): Reporter | null {
+export function installExtendLog(
+  win: ReporterWindow | undefined = typeof window === "undefined" ? undefined : window,
+  opts: { hot?: HotContext; now?: () => number } = { hot: import.meta.hot as HotContext | undefined },
+): Reporter | null {
   if (!win) return null;
   if (installed) return installed.reporter;
+  const now = opts.now ?? Date.now;
+  // When the dev server last hot-updated a module (never, outside the dev server).
+  let lastUpdate = -Infinity;
+  if (opts.hot) {
+    const mark = () => {
+      lastUpdate = now();
+    };
+    opts.hot.on("vite:beforeUpdate", mark);
+    opts.hot.on("vite:afterUpdate", mark);
+  }
 
   const origFetch = win.fetch.bind(win);
   const here = () => win.location.pathname + win.location.search;
@@ -233,7 +288,12 @@ export function installExtendLog(win: ReporterWindow | undefined = typeof window
 
   const report = (level: ClientLevel, message: string, stack?: string, url: string = here()) => {
     if (IGNORED.some((re) => re.test(message))) return;
-    reporter.report({ level, message, stack, url });
+    if (QUIET.some((re) => re.test(message))) {
+      reporter.report({ level: "info", message, stack, url });
+      return;
+    }
+    const hmr = Boolean(opts.hot) && level !== "info" && ((stack !== undefined && HMR_STACK.test(stack)) || now() - lastUpdate < HMR_WINDOW_MS);
+    reporter.report(hmr ? { level: "info", message, stack, url, origin: "hmr" } : { level, message, stack, url });
   };
 
   for (const level of ["error", "warn"] as const) {
@@ -276,13 +336,31 @@ export function installExtendLog(win: ReporterWindow | undefined = typeof window
       throw err;
     }
     if (res.status >= 400) {
-      const level: ClientLevel = res.status === 401 || res.status === 403 ? "warn" : "error";
+      // An action's own 400/422 (React Router's data responses say so) is a validation answer
+      // the page shows, not a failure.
+      const validation = (res.status === 400 || res.status === 422) && res.headers?.get?.("X-Remix-Response") === "yes";
+      const level: ClientLevel = validation ? "info" : res.status === 401 || res.status === 403 ? "warn" : "error";
       report(level, `${method.toUpperCase()} ${path} → ${res.status} ${res.statusText}`.trim());
     }
     return res;
   } as typeof fetch;
 
   win.addEventListener("pagehide", () => reporter.flush());
+
+  // The Preview only (the dev server): say once that this page loaded without errors (#954).
+  if (opts.hot) {
+    const quiet = () =>
+      setTimeout(() => {
+        if (reporter.problems > 0) return;
+        // An error page (the root ErrorBoundary doesn't report a 404) isn't the page loading.
+        const nav = win.performance?.getEntriesByType?.("navigation")?.[0] as { responseStatus?: number } | undefined;
+        if (typeof nav?.responseStatus === "number" && nav.responseStatus >= 400) return;
+        reporter.report({ level: "info", message: PAGE_LOADED, url: here(), loadMs: Math.round(win.performance?.now() ?? 0) });
+        reporter.flush();
+      }, PAGE_QUIET_MS);
+    if (win.document?.readyState === "complete") quiet();
+    else win.addEventListener("load", quiet);
+  }
   return reporter;
 }
 

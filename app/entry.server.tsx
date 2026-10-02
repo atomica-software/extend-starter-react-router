@@ -9,7 +9,8 @@ import { isbot } from "isbot";
 import type { RenderToPipeableStreamOptions } from "react-dom/server";
 import { renderToPipeableStream } from "react-dom/server";
 
-import { log } from "./lib/log.server";
+import { isBuilderRequest } from "./lib/extend-origin.server";
+import { buildRecord, log, writeRecord, type LogFields, type LogLevel } from "./lib/log.server";
 
 export const streamTimeout = 5_000;
 
@@ -93,16 +94,32 @@ export const handleError: HandleErrorFunction = (error, { request }) => {
   if (request.signal.aborted) return;
   const fields = { url: request.url };
   const method = request.method.toUpperCase();
+  // The Builder's own test requests (extend-preview, extend-screenshot): their records say so,
+  // so Contactzilla doesn't show them as the app failing for a viewer (#48).
+  const builder = isBuilderRequest(request.headers);
+  const write = (level: LogLevel, message: string, f: LogFields) => {
+    if (!builder) return log[level](message, f);
+    try {
+      writeRecord({ ...buildRecord(level, message, f), origin: "builder" });
+    } catch {
+      // Logging must never break the request.
+    }
+  };
   if (isRouteErrorResponse(error)) {
     // React Router wraps some internal errors (e.g. "No route matches URL") in a response.
     const inner = (error as { error?: unknown }).error;
     if (error.status === 404) {
       // Unknown URLs (favicon probes, typos): keep them in the log file, don't alert.
-      log.info(`${method} ${error.status} ${error.statusText || "Not Found"}`, fields);
+      write("info", `${method} ${error.status} ${error.statusText || "Not Found"}`, fields);
       return;
     }
-    log.error(`Unhandled server error in ${method} (${error.status})`, { ...fields, error: inner ?? error.data });
+    if (error.status === 405 && builder) {
+      // A test request to a route without an action (often an index route's, which is at ?index).
+      write("info", `${method} 405 Method Not Allowed: no action here (an index route's action is at ?index)`, fields);
+      return;
+    }
+    write("error", `Unhandled server error in ${method} (${error.status})`, { ...fields, error: inner ?? error.data });
     return;
   }
-  log.error(`Unhandled server error in ${method}`, { ...fields, error });
+  write("error", `Unhandled server error in ${method}`, { ...fields, error });
 };

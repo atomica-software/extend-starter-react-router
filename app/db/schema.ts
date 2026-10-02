@@ -3,15 +3,18 @@
  *
  * To add a table:
  *
- *   import { pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
+ *   import { bigserial, pgTable, text, timestamp } from "drizzle-orm/pg-core";
  *
  *   export const notes = pgTable("notes", {
- *     id: serial("id").primaryKey(),
+ *     id: bigserial("id", { mode: "number" }).primaryKey(),
  *     contactUuid: text("contact_uuid").notNull(),
  *     body: text("body").notNull(),
  *     createdBy: text("created_by").notNull(), // viewer.id
  *     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
  *   });
+ *
+ * A child table's key has the parent id's type:
+ *     noteId: bigint("note_id", { mode: "number" }).notNull().references(() => notes.id, { onDelete: "cascade" }),
  *
  * Then run `npm run db:generate` to create a migration in app/db/migrations and
  * `npm run db:migrate` to apply it. Commit the generated migration files.
@@ -52,3 +55,6 @@ export const oauthTokens = pgTable(
     check("oauth_tokens_owner_type_check", sql`${t.ownerType} IN ('user', 'app')`),
   ],
 );
+
+// Text messages: the outbox and inbox app/lib/messaging.server.ts keeps.
+export * from "./messaging-schema";

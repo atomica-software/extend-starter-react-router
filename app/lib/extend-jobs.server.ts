@@ -17,8 +17,15 @@
  * job, so a captured call can't be sent elsewhere. Calls more than 60 seconds off,
  * or with a nonce already seen, are refused. (The older v1 signature, which
  * covers only the timestamp and body, isn't accepted.)
+ *
+ * Webhooks also get X-Extend-Webhook-Url, the full public URL the provider called
+ * (call.url), which providers such as Twilio sign. Check theirs too:
+ *
+ *   const call = await verifyExtendCall(request);
+ *   if (!call || !verifyTwilioSignature(request, call)) return new Response("Forbidden", { status: 403 });
+ *   const form = new URLSearchParams(call.body);   // From, Body, MessageSid…
  */
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 
 const MAX_SKEW_S = 60;
 
@@ -46,6 +53,12 @@ export interface ExtendCall {
   job: string | null;
   /** The webhook's name, or null for a cron job. */
   webhook: string | null;
+  /**
+   * The full public URL the webhook was called at, query included (X-Extend-Webhook-Url,
+   * set by Extend: a sender's copy is dropped); null for a cron job. It holds the
+   * webhook's secret token: don't log it or show it.
+   */
+  url: string | null;
 }
 
 export interface SignedCall {
@@ -94,5 +107,64 @@ export async function verifyExtendCall(request: Request, now: number = Date.now(
   if (expected.length !== given.length || !timingSafeEqual(expected, given)) return null;
   // Only once the signature is good, so nobody can use up a nonce.
   if (!rememberNonce(nonce, nowS)) return null;
-  return { body, job, webhook };
+  return { body, job, webhook, url: webhook !== null ? request.headers.get("x-extend-webhook-url") : null };
+}
+
+function safeEqual(a: string, b: string): boolean {
+  const x = Buffer.from(a);
+  const y = Buffer.from(b);
+  return x.length === y.length && timingSafeEqual(x, y);
+}
+
+/** Twilio's signature of a request to `url` with these form fields (base64 HMAC-SHA1). */
+export function twilioSignature(authToken: string, url: string, params: URLSearchParams | null): string {
+  let data = url;
+  if (params) {
+    for (const name of [...new Set(params.keys())].sort()) {
+      for (const value of params.getAll(name).sort()) data += name + value;
+    }
+  }
+  return createHmac("sha1", authToken).update(data, "utf8").digest("base64");
+}
+
+/** The URL with and without the default port: Twilio may have signed either. */
+function portVariants(url: string): string[] {
+  try {
+    const u = new URL(url);
+    if (u.port) {
+      const without = new URL(url);
+      without.port = "";
+      return [url, without.href];
+    }
+    const withPort = url.replace(/^(https?:\/\/[^/?#]+)/, `$1:${u.protocol === "https:" ? 443 : 80}`);
+    return [url, withPort];
+  } catch {
+    return [url];
+  }
+}
+
+/**
+ * Whether a webhook call really came from Twilio: its X-Twilio-Signature over the
+ * public URL Twilio called (call.url) and the form fields, under your account's
+ * auth token (the TWILIO_AUTH_TOKEN secret by default). Call it after
+ * verifyExtendCall. A JSON body is checked through the URL's bodySHA256.
+ * `extend-webhook send <name> --sign twilio` sends a test that passes.
+ */
+export function verifyTwilioSignature(request: Request, call: ExtendCall, authToken: string | undefined = process.env.TWILIO_AUTH_TOKEN): boolean {
+  const signature = request.headers.get("x-twilio-signature");
+  if (!authToken || !signature || !call.url) return false;
+  const form = /^application\/x-www-form-urlencoded/i.test(request.headers.get("content-type") ?? "");
+  let params: URLSearchParams | null = form ? new URLSearchParams(call.body) : null;
+  if (!form) {
+    // JSON and other bodies: Twilio signs the URL alone, which carries the body's hash.
+    let bodyHash: string | null = null;
+    try {
+      bodyHash = new URL(call.url).searchParams.get("bodySHA256");
+    } catch {
+      return false;
+    }
+    if (bodyHash !== null && !safeEqual(bodyHash, createHash("sha256").update(call.body).digest("hex"))) return false;
+    params = null;
+  }
+  return portVariants(call.url).some((url) => safeEqual(twilioSignature(authToken, url, params), signature));
 }
